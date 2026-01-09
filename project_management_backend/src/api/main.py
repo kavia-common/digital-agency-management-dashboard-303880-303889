@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routers.auth import router as auth_router
 from src.api.routers.clients import router as clients_router
+from src.api.routers.dashboard import router as dashboard_router
 from src.api.routers.projects import router as projects_router
 from src.api.routers.user import router as user_router
 from src.core.config import get_settings
@@ -14,6 +15,7 @@ openapi_tags = [
     {"name": "user", "description": "Authenticated user profile endpoints."},
     {"name": "clients", "description": "Authenticated CRUD endpoints for managing clients."},
     {"name": "projects", "description": "Authenticated CRUD endpoints for managing projects."},
+    {"name": "dashboard", "description": "Authenticated dashboard statistics endpoints."},
 ]
 
 app = FastAPI(
@@ -41,6 +43,7 @@ app.include_router(auth_router)
 app.include_router(user_router)
 app.include_router(clients_router)
 app.include_router(projects_router)
+app.include_router(dashboard_router)
 
 
 @app.get("/", tags=["health"], summary="Health check", operation_id="health_check")

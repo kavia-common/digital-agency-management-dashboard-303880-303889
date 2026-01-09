@@ -1,4 +1,7 @@
+import csv
+import io
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
@@ -35,6 +38,79 @@ def _ensure_client_belongs_to_user(db: Session, current_user: User, client_id: u
     client = db.scalar(select(Client.id).where(Client.id == client_id, Client.owner_user_id == current_user.id))
     if client is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+
+
+def _date_to_iso(d: date | None) -> str:
+    """Serialize an optional date to ISO string for CSV output."""
+    return d.isoformat() if d is not None else ""
+
+
+@router.get(
+    "/export.csv",
+    summary="Export projects as CSV",
+    description=(
+        "Exports all projects for the authenticated user as a CSV file.\n\n"
+        "CSV headers: id,name,client_name,status,start_date,end_date,revenue_cents,updated_at"
+    ),
+    operation_id="projects_export_csv",
+    responses={
+        200: {
+            "content": {"text/csv": {}},
+            "description": "CSV export of projects",
+        }
+    },
+)
+def export_projects_csv(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Export all projects as a downloadable CSV for the current user."""
+    # Select only required columns and join client name for export.
+    stmt = (
+        select(
+            Project.id,
+            Project.name,
+            func.coalesce(Client.name, "").label("client_name"),
+            Project.status,
+            Project.start_date,
+            Project.due_date.label("end_date"),
+            Project.revenue_cents,
+            Project.updated_at,
+        )
+        .select_from(Project)
+        .outerjoin(Client, Client.id == Project.client_id)
+        .where(Project.owner_user_id == current_user.id)
+        .order_by(Project.created_at.desc())
+    )
+    rows = db.execute(stmt).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+
+    # Required header order
+    writer.writerow(
+        ["id", "name", "client_name", "status", "start_date", "end_date", "revenue_cents", "updated_at"]
+    )
+
+    for r in rows:
+        writer.writerow(
+            [
+                str(r.id),
+                r.name or "",
+                r.client_name or "",
+                str(r.status),
+                _date_to_iso(r.start_date),
+                _date_to_iso(r.end_date),
+                int(r.revenue_cents or 0),
+                r.updated_at.isoformat() if r.updated_at is not None else "",
+            ]
+        )
+
+    csv_text = output.getvalue()
+    filename = "projects.csv"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+
+    return Response(content=csv_text, media_type="text/csv", headers=headers)
 
 
 @router.get(
@@ -91,9 +167,7 @@ def get_project(
     current_user: User = Depends(get_current_user),
 ) -> ProjectResponse:
     """Get a project by id for the current user."""
-    project = db.scalar(
-        select(Project).where(Project.id == project_id, Project.owner_user_id == current_user.id)
-    )
+    project = db.scalar(select(Project).where(Project.id == project_id, Project.owner_user_id == current_user.id))
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     return _to_project_response(project)
@@ -148,9 +222,7 @@ def update_project(
     current_user: User = Depends(get_current_user),
 ) -> ProjectResponse:
     """Update a project belonging to the current user."""
-    project = db.scalar(
-        select(Project).where(Project.id == project_id, Project.owner_user_id == current_user.id)
-    )
+    project = db.scalar(select(Project).where(Project.id == project_id, Project.owner_user_id == current_user.id))
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
@@ -191,9 +263,7 @@ def delete_project(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """Delete a project belonging to the current user."""
-    project = db.scalar(
-        select(Project).where(Project.id == project_id, Project.owner_user_id == current_user.id)
-    )
+    project = db.scalar(select(Project).where(Project.id == project_id, Project.owner_user_id == current_user.id))
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
