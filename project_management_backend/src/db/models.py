@@ -110,3 +110,28 @@ class Project(Base):
 
     owner: Mapped["User"] = relationship(back_populates="projects")
     client: Mapped["Client | None"] = relationship(back_populates="projects")
+
+
+class UserSettings(Base):
+    """ORM model for the user_settings table (per-user preferences).
+
+    Currently used for theme persistence (light/dark). This table is expected to exist already
+    in PostgreSQL (per SCHEMA.md).
+    """
+
+    __tablename__ = "user_settings"
+
+    # Use user_id as the primary key to ensure one settings row per user.
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    # Store the theme preference; default behavior is handled at the API level if missing.
+    theme: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    user: Mapped["User"] = relationship()
